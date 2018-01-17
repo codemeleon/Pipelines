@@ -80,10 +80,8 @@ def run(inf, otf, org, fld):
                 job_ids.remove(job_id)
                 if status == "Done":
                     for fmt in [
-                            "tbl",
-                            #  "tbl_clean",
-                            # "gbf", "sqn", "xml", "faa",
-                            # "ffn", "aln"
+                            "tbl", "tbl_clean", "gbf", "sqn", "xml", "faa",
+                            "ffn", "aln"
                     ]:
                         outputfile = open("%s/%s/%s.%s" %
                                           (otf, job_ids_dict[job_id],
