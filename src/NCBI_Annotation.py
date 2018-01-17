@@ -43,7 +43,7 @@ def result_parse():
     show_default=True)
 def run(inf, otf, org, fld):
     """Script is to generate annotation based on available data on NCBI Server.
-    Please do not use it for large about of dataset."""
+    Please do not use it for large number of dataset."""
     if org == "Flu":
         root = "https://www.ncbi.nlm.nih.gov/genomes/FLU/annotation/api/"
 
