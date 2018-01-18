@@ -70,6 +70,13 @@ def run(inf, otf, org, fld):
         sleep(10)
     # TODO: Generate a log
     # TODO: 10 attempts for Pending files
+    datax = pd.DataFrame({
+        'task': list(job_ids_dict.keys()),
+        'samp': list(job_ids_dict.values())
+    })
+    datax.to_csv("tasks.tab", index=False, sep="\t")
+    del datax
+
     failed_list = open(fld, "w")
 
     while len(job_ids):
