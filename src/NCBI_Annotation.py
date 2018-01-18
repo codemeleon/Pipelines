@@ -55,14 +55,19 @@ def run(inf, otf, org, fld):
         exit("Given output folder is not provided. Exiting")
 
     for fl in glob("%s/*" % inf):
-        sequences = open(fl).read()
         samp = path.split(fl)[1].rsplit('.', 1)[0]
+        if path.isfile("%s/%s/__done__" % (otf, samp)):
+            continue
+        click.echo("Task submitted for %s" % samp)
+
+        # TODO: add option that the task has beed performed
+        sequences = open(fl).read()
         data = {"sequence": sequences, "cmd": 'submit'}
         data = up.urlencode(data)
         req_out = requests.post(root, data=data)
         job_ids_dict[req_out.json()["job_id"]] = samp
         job_ids.append(req_out.json()["job_id"])
-        sleep(3)
+        sleep(10)
     # TODO: Generate a log
     # TODO: 10 attempts for Pending files
     failed_list = open(fld, "w")
@@ -98,9 +103,15 @@ def run(inf, otf, org, fld):
                         outputfile.write(req_out.text)  # json()
                         outputfile.close()
                         sleep(10)
+                    open("%s/%s/__done__" % (otf, job_ids_dict[job_id]),
+                         "w").close()
+                    click.echo("Task finished for %s" % job_ids_dict[job_id])
+
                 else:
                     failed_list.write("%s\n" % job_ids_dict[job_id])
             else:  # ["Pending", "Running", "Confirmed"]:
+                click.echo(
+                    "Task for %s added for next cycle" % job_ids_dict[job_id])
                 sleep(10)
                 continue
     failed_list.close()
