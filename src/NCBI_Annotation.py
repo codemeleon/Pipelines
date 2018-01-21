@@ -103,7 +103,7 @@ def run(inf, otf, org, fld):
                         download = {
                             "job_id": job_id,
                             "cmd": "download",
-                            "format": "tbl"
+                            "format": fmt
                         }
                         download = up.urlencode(download)
                         req_out = requests.post(root, data=download)
