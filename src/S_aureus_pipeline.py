@@ -153,6 +153,7 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
         trim_galore, formatter(".+/(?P<filebase>\w+)_1.fq.gz"),
         "%s/Velvet/{filebase[0]}/contigs.fa" % outd)  # Needs some fixing here
     def velvet(inputfiles, outputfile):
+        print(inputfiles, outputfile, "anmolkiran")
         vh = "'-shortPaired -fastq.gz -separate %s %s'" % (inputfiles[0],
                                                            inputfiles[1])
         fl_bs = path.split(inputfiles[0])[1].split("_1.fq.gz")[0]
@@ -231,25 +232,27 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
         ]
         system(" ".join(srst2_cmd))
 
-    @merge(velvet, formatter(".+/contigs.fa"),
-           ["%s/Velvet/stats.tsv" % outd,
-            "%s/Velvet/stats.png" % outd])  # Needs some
+    @merge(velvet, [
+        "%s/Velvet/stats.tsv" % outd,
+    ])  # Needs some # "%s/Velvet/stats.png" % outd
     def velvet_stats(inputfiles, outputfiles):
         # TODO : Plan what to add as figure and in the table
-        samp_details = {"samp_id":[], "genome_size":[], "mean_coverage":[]}
+        samp_details = {"samp_id": [], "genome_size": [], "mean_coverage": []}
         for fl in inputfiles:
             samp_id = fl.split("/")[-2]
             genome_size = 0
             reads = 0
             for rec in SeqIO.parse(fl, "fasta"):
-                frag_depth = float(rec.id.rsplit("_",1)[1])
+                frag_depth = float(rec.id.rsplit("_", 1)[1])
                 frag_size = len(rec.seq)
                 genome_size += frag_size
                 reads += frag_depth * frag_size
             samp_details["samp_id"].append(samp_id)
             samp_details["genome_size"].append(genome_size)
-            samp_details["mean_coverage"].append(reads/genome_size)
-        samp_details[["samp_id", "genome_size", "mean_coverage"]].to_csv(outputfiles[0], index=False, sep="\t")
+            samp_details["mean_coverage"].append(reads / genome_size)
+        samp_details = pd.DataFrame.from_dict(samp_details)
+        samp_details[["samp_id", "genome_size", "mean_coverage"]].to_csv(
+            outputfiles[0], index=False, sep="\t")
 
         # TODO: Some plotting
 
