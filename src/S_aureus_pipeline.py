@@ -227,6 +227,21 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
             except:
                 pass
 
+    @mkdir("%s/Unicycler" % outd)
+    @transform(
+        s_aureus_split, formatter(".+/(?P<filebase>\w+)_1.fq.gz"),
+        "%s/Unicycler/{filebase[0]}/assembly.fasta" % outd)
+    def unicycler(inputfile, outputfile):
+        uni_cmd = ["unicycler",
+                    "-1",  inputfile,
+                    "-2", inputfile.replace("_1.fq","_2.fq"),
+                    "-o", path.split(outputfile)[0],
+                    "-t", "1",
+                    "--keep", "0",
+                    "--mode", "conservative"]
+        system(" ".join(uni_cmd))
+
+
     @mkdir("%s/Velvet" % outd)
     @transform(
         s_aureus_split, formatter(".+/(?P<filebase>\w+)_1.fq.gz"),
@@ -358,15 +373,6 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
     #      system(" ".join(ariba_mlst_cmd))
     #
     #  @follows(velvet, mkdir("%s/VirSorter" % outd))
-    #  @transform(velvet, formatter(".+/contigs.fa"),
-    #             "%s/VirSorter/{subdir[0][0]}/{subdir[0][0]}.fa" % outd)
-    #  def copy_velvet_contigs(inputfile, outputfile):
-    #      """FCopy Velvet Files"""
-    #      makedirs(path.split(outputfile)[0], mode=0o777, exist_ok=True)
-    #      copy(inputfile, outputfile, follow_symlinks=True)
-    #
-    #  @transform(
-    #      copy_velvet_contigs, formatter(".+/(?P<filebase>\w+).fa"),
     #      "%s/VirSorter/{subdir[0][0]}/VIRSorter_global-phage-signal.csv" % outd)
     #  def virSorter(inputfile, outputfile):
     #      fd, fl = path.split(path.abspath(inputfile))
