@@ -171,29 +171,6 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
         with open(outputfile, "w") as of:
             Popen(kraken_cmd2, stdout=of).communicate()
     #
-    #  @follows(velvet, mkdir("%s/Prokka" % outd))
-    #  @transform(velvet, formatter(".+/contigs.fa"), [
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.err" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.faa" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.ffn" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.fna" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.fsa" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.gbk" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.gff" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.log" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.sqn" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.tbl" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.tsv" % outd,
-    #      "%s/Prokka/{subdir[0][0]}/{subdir[0][0]}.txt" % outd,
-    #  ])  # Needs some fixing here
-    #  def prokka(inputfile, outputfiles):
-    #      pkk_cmd = [
-    #          "prokka", inputfile, "--outdir",
-    #          path.split(outputfiles[0])[0], "--force", "--prefix",
-    #          path.split(outputfiles[0])[1].split('.err')[0]
-    #      ]
-    #      Popen(pkk_cmd).communicate()
-    #
     @merge(kraken, "%s/s_aureus.tsv"%outd)
     def s_aureus(inputfiles, outputfile):
         res = []
@@ -237,10 +214,36 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
                     "-2", inputfile.replace("_1.fq","_2.fq"),
                     "-o", path.split(outputfile)[0],
                     "-t", "1",
-                    "--keep", "0",
+                    "--vcf",
+                    "--keep", "3",
                     "--mode", "conservative"]
         system(" ".join(uni_cmd))
+        if not path.exists(outputfile):
+            try:
+                makedirs(path.split(outputfile)[0])
+            except:
+                pass
+            open(outputfile,"w").close()
 
+    @merge(unicycler, f"{outd}/unicycler_samples")
+    def unicycler_merge(inputfiles, outputfile):
+        with open(outputfile, "w") as out:
+            for inf in inputfiles:
+                seq_size = 0
+                for rec in SeqIO.parse(inf,"fasta"):
+                    seq_size += len(rec.seq)
+                if seq_size >= 2e6:
+                    out.write("%s\n"%(inf.split("/")[-2]))
+
+    @mkdir("%s/Uni_samples" % outd)
+    @subdivide(unicycler_merge, formatter(),"%s/Uni_samples/*.fasta" % outd)
+    def unicycler_split(inputfile, outputfiles):
+        with open(inputfile) as fin:
+            for line in fin:
+                samp_id = line[:-1]
+                with open(f"{outd}/Uni_samples/{samp_id}.fasta","w") as fout:
+                    for rec in SeqIO.parse(f"{outd}/Unicycler/{samp_id}/assembly.fasta","fasta"):
+                        fout.write(f">{samp_id}#{rec.id}\n{rec.seq}\n")
 
     @mkdir("%s/Velvet" % outd)
     @transform(
@@ -275,6 +278,62 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
             pass
         #  if not path.exists(f"{fl_bs}")
     #
+    @mkdir("%s/Prokka" % outd)
+    @transform(unicycler_split, formatter(".+/(?P<filebase>\w+).fasta"),
+            #  [
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.err" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.faa" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.ffn" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.fna" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.fsa" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.gbf" % outd,
+        "%s/Prokka/{filebase[0]}/{filebase[0]}.gff" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.log" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.sqn" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.tbl" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.tsv" % outd,
+        #  "%s/Prokka/{filebase[0]}/{filebase[0]}.txt" % outd,
+    #  ]
+    )  # Needs some fixing here
+    def prokka(inputfile, outputfiles):
+        #  print(inputfile, outputfiles)
+        pkk_cmd = [
+            "prokka", inputfile,"--cpus", "1", "--outdir",
+            path.split(outputfiles[0])[0], "--prefix",
+            path.split(outputfiles[0])[1].split('.faa')[0],
+            "--locustag",
+            path.split(outputfiles[0])[1].split('.faa')[0]
+        ]
+        Popen(pkk_cmd).communicate()
+
+    #  @mkdir("Prokka_gff")
+    #  @transform(prokka,formatter(".+/(?P<filebase>\w+).gff"),
+    #          "%s/Prokka_gff/{filebase[0]}.gff"%outd)
+    #  def copy_gff(inputfile, outputfile):
+    #      print(inputfile,outputfile)
+    #
+
+    @merge(prokka, f"{outd}/Roary/clusters.cls")
+    def roary_run(inputfiles, outputfile):
+        if path.exists(outputfile):
+            pass
+        else:
+            prokka_folder = inputfiles[0].rsplit("/",2)[0]
+            roary_outs = path.split(outputfile)
+            roary_cmd = ["roary", "-o", roary_outs[1], "-f", roary_outs[0],
+                    "-e", "--mafft", "-p", "25", f"{prokka_folder}/*/*.gff"]
+            system(" ".join(roary_cmd)) #.communicate()
+        #  Popen(roary_cmd).communicate()
+        #  print(inputfiles, outputfile)
+
+    @transform(roary_run, formatter() ,f"{outd}/fasttree.tree")
+    def fastree(inputfile, outputfile):
+        fast_cmd = ["fasttreeMP", "-nt", "-gtr", "-gamma",
+                "<", "%s/core_gene_alignment.aln" % path.split(inputfile)[0],
+                ">", outputfile]
+        system(" ".join(fast_cmd))
+
+
 
 
     @mkdir("%s/MLST" % outd)
@@ -334,56 +393,22 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
 
         system(" ".join(smmry_cmd))
 
-    #
-    #  @merge(velvet, [
-    #      "%s/Velvet/stats.tsv" % outd,
-    #  ])  # Needs some # "%s/Velvet/stats.png" % outd
-    #  def velvet_stats(inputfiles, outputfiles):
-    #      # TODO : Plan what to add as figure and in the table
-    #      samp_details = {"samp_id": [], "genome_size": [], "mean_coverage": []}
-    #      for fl in inputfiles:
-    #          samp_id = fl.split("/")[-2]
-    #          genome_size = 0
-    #          reads = 0
-    #          for rec in SeqIO.parse(fl, "fasta"):
-    #              frag_depth = float(rec.id.rsplit("_", 1)[1])
-    #              frag_size = len(rec.seq)
-    #              genome_size += frag_size
-    #              reads += frag_depth * frag_size
-    #          samp_details["samp_id"].append(samp_id)
-    #          samp_details["genome_size"].append(genome_size)
-    #          samp_details["mean_coverage"].append(reads / genome_size)
-    #      samp_details = pd.DataFrame.from_dict(samp_details)
-    #      samp_details[["samp_id", "genome_size", "mean_coverage"]].to_csv(
-    #          outputfiles[0], index=False, sep="\t")
-    #
-        # TODO: Some plotting
+        # TODO: Some plottin    #
 
-    #  @follows(trim_galore, mkdir("%s/ARIBA_MLST" % outd))
-    #  @transform(trim_galore, formatter(".+/(?P<filebase>\w+)_1.fq.gz"), [
-    #      "%s/ARIBA_MLST/{filebase[0]}/mlst_report.tsv" % outd,
-    #      "%s/ARIBA_MLST/{filebase[0]}/mlst_report.details.tsv" % outd,
-    #  ])  # Needs some
-    #  def ariba_mlst(inputfiles, outputfiles):
-    #      ariba_mlst_cmd = [
-    #          "ariba", "run", "aribaSaureusmlst/ref_db", inputfiles[0],
-    #          inputfiles[1],
-    #          path.split(outputfiles[0])[0]
-    #      ]
-    #      system(" ".join(ariba_mlst_cmd))
-    #
-    #  @follows(velvet, mkdir("%s/VirSorter" % outd))
-    #      "%s/VirSorter/{subdir[0][0]}/VIRSorter_global-phage-signal.csv" % outd)
-    #  def virSorter(inputfile, outputfile):
-    #      fd, fl = path.split(path.abspath(inputfile))
-    #      vir_cmd = [
-    #          "docker", "run", "--user", "1000:1000", "--cpus", "1", "-v",
-    #          "/.anmol/docker_images/virsorter-data:/data", "-v",
-    #          "%s:/wdir" % fd, "-w", "/wdir", "--rm",
-    #          "discoenv/virsorter:v1.0.3", "--db", "2", "--fna",
-    #          "/wdir/%s" % fl
-    #      ]
-    #      Popen(vir_cmd).communicate()
+    @mkdir(f"{outd}/VirSorter_refdb")
+    @transform(unicycler_split, formatter(".+/(?P<filebase>\w+).fasta"),
+        "%s/VirSorter_refdb/{filebase[0]}/VIRSorter_global-phage-signal.csv" % outd)
+    def virSorter(inputfile, outputfile):
+        print(inputfile,outputfile)
+        fd, fl = path.split(path.abspath(inputfile))
+        vir_cmd = ["perl",
+                    "VirSorter/wrapper_phage_contigs_sorter_iPlant.pl",
+                    "-f", inputfile,
+                    "--db", "1",
+                    "--wdir",path.split(outputfile)[0],
+                    "--ncpu", "1",
+                    "--data-dir", "/home/anmol/pipelines/virsorter-data/"]
+        Popen(vir_cmd).communicate()
         # pass
 
     #
