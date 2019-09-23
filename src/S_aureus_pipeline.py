@@ -116,6 +116,7 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
     # print("%s/*_%s.%s" % (fqgzd, fd, sfx), files)
     filepaires = [[f, f.replace("%s.%s" % (fd, sfx), "%s.%s" % (rv, sfx))]
                   for f in files]
+    reffile = "GCF_000013425.1_ASM1342v1_genomic.fna"
     # print(filepaires)
     # Create MLST stuffs here
 
@@ -306,11 +307,6 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
         ]
         Popen(pkk_cmd).communicate()
 
-    #  @mkdir("Prokka_gff")
-    #  @transform(prokka,formatter(".+/(?P<filebase>\w+).gff"),
-    #          "%s/Prokka_gff/{filebase[0]}.gff"%outd)
-    #  def copy_gff(inputfile, outputfile):
-    #      print(inputfile,outputfile)
     #
 
     @merge(prokka, f"{outd}/Roary/clusters.cls")
@@ -409,17 +405,71 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
                     "--ncpu", "1",
                     "--data-dir", "/home/anmol/pipelines/virsorter-data/"]
         Popen(vir_cmd).communicate()
-        # pass
 
-    #
-    # def ariba_merge():
-    #     pass
+    @mkdir(f"{outd}/Blat_Plasmid")
+    @transform(unicycler_split, formatter(".+/(?P<filebase>\w+).fasta"),
+            "%s/Blat_Plasmid/{filebase[0]}.psl" % outd)
+    def blat_plasmid(inputfile, outputfile):
+        blat_cmd = ["blat", "-noHead", inputfile,
+                    "../plasmids/all_plasmids.fasta",
+                    outputfile]
+        system(" ".join(blat_cmd))
 
-    #     # Write your tricks here
-    #     pass
-    #
-    # def emm():
-    #     pass
+    @mkdir(f"{outd}/Bowtie_index")
+    @transform(reffile, formatter(), f"{outd}/Bowtie_index/index.1.bt2l")
+    def bowtie_build(inputfile, outputfile):
+        build_cmd = ["bowtie2-build", "--large-index", inputfile,
+                    outputfile.split(".1.bt2l")[0]]
+        system(" ".join(build_cmd))
+
+    @transform(reffile, suffix(""),".fai")
+    def ref_index(inputfile, outputfile):
+        ref_idx_cmd = ["samtools", "faidx", inputfile]
+        system(" ".join(ref_idx_cmd))
+
+    @follows(ref_index)
+    @mkdir(f"{outd}/MapBasedGenome")
+    @transform(s_aureus_split,
+            formatter(".+/(?P<filebase>\w+)_1.fq.gz"),
+            add_inputs(bowtie_build, reffile),
+            "%s/MapBasedGenome/{filebase[0]}.fasta" % outd)
+    def map_based_genome(inputfiles, outputfile):
+
+        file_base = path.split(inputfiles[0])[1].split("_1.fq")[0]
+        bwt_cmd = ["bowtie2", "--very-sensitive-local", "--local",
+                    "-x", inputfiles[1].split(".1.bt2l")[0],
+                    "-S", f"/tmp/{file_base}.sam",
+                    "-1", inputfiles[0],
+                    "-2", inputfiles[0].replace("_1.fq","_2.fq")]
+        sam2bam_cmd = ["samtools", "view", "-bS",
+                        "-o", f"/tmp/{file_base}.bam",
+                        f"/tmp/{file_base}.sam"]
+        bam_sort_cmd = ["samtools", "sort", "--reference", inputfiles[2],
+                    "-O", "bam",
+                    "-o", f"/tmp/{file_base}_sorted.bam",
+                    f"/tmp/{file_base}.bam"]
+        bam_idx_cmd = ["samtools", "index", f"/tmp/{file_base}_sorted.bam"]
+        bam2fq_cmd = ["bcftools", "mpileup", "-O", "u",
+                        "-f", inputfiles[2],
+                        f"/tmp/{file_base}_sorted.bam",
+                        "|",
+                        "bcftools", "call",
+                        "--ploidy", "1", "-c",
+                        "|",
+                        "vcfutils.pl",
+                        "vcf2fq", ">", f"/tmp/{file_base}.fq"]
+        print(inputfiles, outputfile)
+        for cmd in [bwt_cmd,sam2bam_cmd, bam_sort_cmd, bam_idx_cmd,
+                bam2fq_cmd]:
+            system(" ".join(cmd))
+
+        with open(outputfile, "w") as fout:
+            for rec in SeqIO.parse(f"/tmp/{file_base}.fq", "fastq"):
+                fout.write(">%s\n%s\n"%(file_base, rec.seq))
+
+    def genome_aln():
+        pass
+
 
     # TODO: Group them based on the organims. Create Separate folder for the each organism
     # TODO: Sequence typing. It may be multiple. Fetch details from kraken
