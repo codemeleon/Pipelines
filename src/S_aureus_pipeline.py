@@ -1,3 +1,4 @@
+import io
 from glob import glob
 from os import environ, makedirs, path, rename, symlink, system, unlink
 from shutil import copy, rmtree
@@ -467,8 +468,96 @@ def run(fqgzd, outd, fd, rv, sfx, ncr):
             for rec in SeqIO.parse(f"/tmp/{file_base}.fq", "fastq"):
                 fout.write(">%s\n%s\n"%(file_base, rec.seq))
 
-    def genome_aln():
-        pass
+    @merge(map_based_genome, f"{outd}/map_based_genome_alignments.fasta")
+    def genome_aln(inputfiles, outputfile):
+        sequences = {}
+        seq_sizes = []
+        for fl in inputfiles:
+            for rec in SeqIO.parse(fl, "fasta"):
+                sequences[rec.id] = str(rec.seq)
+                seq_sizes.append(len(rec.seq))
+        max_size = max(seq_sizes)
+        with open(outputfile, "w") as fout:
+            for k in sequences:
+                fout.write(">%s\n%s\n" %
+                        (k, sequences[k]+"N"*(max_size-len(sequences[k]))))
+
+    @mkdir(f"{outd}/Gubbins")
+    @transform(genome_aln,formatter(""),
+            [f"{outd}/Gubbins/MRSA_MSSA_Malawi.branch_base_reconstruction.embl" ,
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.filtered_polymorphic_sites.phylip",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.node_labelled.final_tree.tre",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.recombination_predictions.embl",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.summary_of_snp_distribution.vcf",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.filtered_polymorphic_sites.fasta",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.final_tree.tre",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.per_branch_statistics.csv",
+            f"{outd}/Gubbins/MRSA_MSSA_Malawi.recombination_predictions.gff"])
+    def gubbin_run(inputfile, outputfiles):
+        #  print(inputfile, outputfiles)
+        outfile_base = path.split(outputfiles[0])[1].split(".branch")[0]
+        gubb_cmd = ["run_gubbins.py",
+                    "-t", "hybrid",
+                    "-p", outfile_base,
+                    "-c", "25",
+                    #  "--iterations","100",
+                    "--raxml_model", "GTRGAMMA",
+                    inputfile]
+        system(" ".join(gubb_cmd))
+        try:
+            system(f"mv {outfile_base}* {path.split(outputfiles[0])[0]}")
+        except:
+            pass
+
+    @mkdir(f"{outd}/Depth")
+    @transform(unicycler_split, formatter(".+/(?P<filebase>\w+).fasta"),
+        "%s/Depth/{filebase[0]}.depth" % outd)
+    def depth(inputfile, outputfile):
+        filebase = path.split(inputfile)[1].split(".fas")[0]
+        fqd = f"{outd}/S_aureus_Samples"
+        bwt_dx_cmd = ["bowtie2-build", "--large-index", inputfile,
+                f"/tmp/{filebase}"]
+        bwt_cmd = ["bowtie2", "--very-sensitive",
+                    "-x", f"/tmp/{filebase}",
+                    "-S", f"/tmp/{filebase}.sam",
+                    "-1", f"{fqd}/{filebase}_1.fq.gz",
+                    "-2", f"{fqd}/{filebase}_2.fq.gz"]
+        sam2bam_cdm = ["samtools", "view", "-bS",
+                        "-o", f"/tmp/{filebase}.bam",
+                        f"/tmp/{filebase}.sam"]
+        bam_sort_cmd = ["samtools", "sort",
+                        "--reference", inputfile,
+                        "-O", "bam",
+                        "-o", f"/tmp/{filebase}_sorted.bam",
+                        f"/tmp/{filebase}.bam"]
+        bam2vcf_cmd = ["bcftools", "mpileup",
+                        "-f", inputfile,
+                        f"/tmp/{filebase}_sorted.bam",
+                        "-o", f"/tmp/{filebase}.vcf"]
+        for cmd in [bwt_dx_cmd, bwt_cmd, sam2bam_cdm, bam_sort_cmd,
+                bam2vcf_cmd]:
+            system(" ".join(cmd))
+
+        def read_vcf(fl):
+            with open(fl, 'r') as f:
+                lines = [l for l in f if not l.startswith('##')]
+            return pd.read_csv(
+                io.StringIO(''.join(lines)),
+                dtype={'#CHROM': str, 'POS': int, 'ID': str, 'REF': str, 'ALT': str,
+                       'QUAL': str, 'FILTER': str, 'INFO': str},
+                sep='\t'
+            ).rename(columns={'#CHROM': 'CHROM'})
+
+        data = read_vcf(f"/tmp/{filebase}.vcf")
+        #  print(data)
+        data = data[~data["INFO"].str.contains("INDEL")]
+        data["DEPTH"] = data["INFO"].apply(lambda x:x.split(";")[0].split("=")[1])
+        data = data[["CHROM", "POS", "DEPTH"]]
+        data.to_csv(outputfile, index=False, sep="\t")
+        #  print("Anmol", data)
+        del_cmd = ["rm", f"/tmp/{filebase}*"]
+        system(" ".join(del_cmd))
+        #  pass
 
 
     # TODO: Group them based on the organims. Create Separate folder for the each organism
